@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dead Click Detector</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #1a252f;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+        #url-input {
+            flex-grow: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        #submit-btn {
+            padding: 12px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        #submit-btn:disabled {
+            background-color: #a0cfff;
+            cursor: not-allowed;
+        }
+        #submit-btn:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        .spinner {
+            border: 6px solid #f3f3f3;
+            border-top: 6px solid #007bff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #results {
+            margin-top: 2rem;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .summary-card {
+            background-color: #f9f9f9;
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+        .summary-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: #555;
+            font-size: 1rem;
+        }
+        .summary-card .value {
+            font-size: 1.8rem;
+            font-weight: bold;
+        }
+        .summary-card .value.active { color: #28a745; }
+        .summary-card .value.dead { color: #dc3545; }
+        .summary-card .value.error { color: #ffc107; }
+        .summary-card .value.total { color: #17a2b8; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        th, td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+            word-break: break-word;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+        .status-dead { background-color: #ffdddd; }
+        .status-error, .status-element_not_found, .status-not_clickable, .status-click_intercepted {
+            background-color: #fff3cd;
+        }
+        .error-message {
+            color: #d9534f;
+            text-align: center;
+            font-weight: bold;
+            padding: 1rem;
+            border: 1px solid #d9534f;
+            background-color: #f2dede;
+            border-radius: 4px;
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Dead Click Detector 🕵️‍♂️</h1>
+        <form id="url-form">
+            <div class="input-group">
+                <input type="url" id="url-input" placeholder="Enter webpage URL (e.g., https://example.com)" required>
+                <button type="submit" id="submit-btn">Test URL</button>
+            </div>
+        </form>
+
+        <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p>Testing in progress... This may take a few minutes. Please wait.</p>
+        </div>
+        
+        <div class="error-message" id="error-message"></div>
+
+        <div id="results">
+            </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('url-form');
+        const urlInput = document.getElementById('url-input');
+        const submitBtn = document.getElementById('submit-btn');
+        const loader = document.getElementById('loader');
+        const resultsContainer = document.getElementById('results');
+        const errorMessageDiv = document.getElementById('error-message');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = urlInput.value;
+            if (!url) {
+                alert('Please enter a valid URL.');
+                return;
+            }
+
+            // --- Reset UI ---
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Testing...';
+            loader.style.display = 'block';
+            resultsContainer.innerHTML = '';
+            errorMessageDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/test_url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    throw new Error(data.error || `Server responded with status: ${response.status}`);
+                }
+                
+                displayResults(data);
+
+            } catch (error) {
+                console.error('Error:', error);
+                errorMessageDiv.textContent = `An error occurred: ${error.message}`;
+                errorMessageDiv.style.display = 'block';
+            } finally {
+                // --- Restore UI ---
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Test URL';
+                loader.style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            // --- 1. Display Summary ---
+            const summary = data.summary;
+            const summaryHTML = `
+                <h2>Test Summary for ${data.url}</h2>
+                <div class="summary">
+                    <div class="summary-card">
+                        <h3>Total Found</h3>
+                        <p class="value total">${data.total_elements_found}</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Active Clicks ✅</h3>
+                        <p class="value active">${data.active_clicks}</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Dead Clicks ❌</h3>
+                        <p class="value dead">${data.dead_clicks}</p>
+                    </div>
+                    <div class="summary-card">
+                        <h3>Errors ⚠️</h3>
+                        <p class="value error">${data.errors}</p>
+                    </div>
+                </div>
+            `;
+
+            // --- 2. Display Detailed Table of Dead Clicks and Errors ---
+            let deadClickCount = data.dead_clicks + data.errors;
+            let tableHTML = `
+                <h2>Detailed Report (${deadClickCount} Issues Found)</h2>
+            `;
+            
+            if (deadClickCount > 0) {
+                 tableHTML += `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Element</th>
+                                <th>Content / Text</th>
+                                <th>Status</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                data.results.forEach(result => {
+                    const status = result.click_status;
+                    // We only want to show the problematic ones
+                    if (status !== 'dead_click' && !status.startsWith('error') && status !== 'element_not_found' && status !== 'not_clickable' && status !== 'click_intercepted') {
+                        return;
+                    }
+
+                    const el = result.element_info;
+                    const textContent = el.text ? el.text.substring(0, 100) : (el.aria_label || el.title || 'No Text');
+                    const errorDetails = result.error_message ? result.error_message.substring(0, 150) : 'N/A';
+
+                    tableHTML += `
+                        <tr class="status-${status.replace(/_/g, '-')}">
+                            <td>
+                                <strong>Tag:</strong> ${el.tag_name}<br>
+                                <strong>ID:</strong> ${el.id || 'N/A'}<br>
+                                <strong>Class:</strong> ${el.class_names.substring(0, 50) || 'N/A'}
+                            </td>
+                            <td>${escapeHtml(textContent)}</td>
+                            <td>${status}</td>
+                            <td>${escapeHtml(errorDetails)}</td>
+                        </tr>
+                    `;
+                });
+
+                tableHTML += `</tbody></table>`;
+            } else {
+                tableHTML += `<p style="text-align: center; color: green; font-size: 1.2rem;">🎉 No dead clicks or errors found!</p>`;
+            }
+
+            resultsContainer.innerHTML = summaryHTML + tableHTML;
+        }
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>
