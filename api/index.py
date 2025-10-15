@@ -1,66 +1,54 @@
+from flask import Flask, request, jsonify, render_template
+from tester import ClickableElementTester  # If using locally
 import traceback
 import logging
-from flask import Flask, render_template, request, jsonify
-from tester import ClickableElementTester  # Import your testing class
+import os
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Setup logging for better debugging in production
+# Vercel-safe logging (console only)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] - %(message)s",
-    handlers=[
-        logging.FileHandler("app.log"),  # Log to file
-        logging.StreamHandler()          # Log to console (for Render/Vercel)
-    ]
+    format="%(asctime)s [%(levelname)s] - %(message)s"
 )
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
 
 @app.route('/')
 def index():
-    """Render the main frontend HTML page."""
-    return render_template('index.html')
+    return jsonify({"message": "✅ Flask app is running on Vercel!"})
 
 @app.route('/test_url', methods=['POST'])
 def run_test():
-    """
-    Receives a URL from the frontend, runs the ClickableElementTester,
-    and returns the test results as JSON.
-    """
     data = request.get_json(silent=True) or {}
-
     url = data.get('url')
+
     if not url:
-        logging.warning("Missing URL in request.")
         return jsonify({'error': 'URL is required.'}), 400
 
-    # Initialize tester with safe defaults
-    tester = ClickableElementTester(
-        headless=True,       # Keep headless=True for production
-        timeout=15,
-        max_workers=3
-    )
+    # Detect if running on Vercel (no Selenium allowed)
+    if os.environ.get("VERCEL"):
+        logger.info("Running in Vercel environment — skipping Selenium test.")
+        return jsonify({
+            "status": "ok",
+            "message": f"Received URL: {url} (Selenium test skipped on Vercel)"
+        }), 200
 
+    tester = ClickableElementTester(headless=True, timeout=15, max_workers=3)
     try:
-        logging.info(f"🚀 Starting test for URL: {url}")
+        logger.info(f"🚀 Starting test for URL: {url}")
         results = tester.run_comprehensive_test_concurrent(url)
-        logging.info(f"✅ Test finished successfully for URL: {url}")
-        return jsonify(results), 200
-
+        logger.info(f"✅ Test finished for URL: {url}")
+        return jsonify(results)
     except Exception as e:
-        logging.error(f"❌ Error during test for {url}: {e}", exc_info=True)
-        return jsonify({'error': f'An unexpected error occurred: {str(e)}'}), 500
-
+        logger.error(f"❌ Error: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
     finally:
-        # Ensure browser/driver is closed even on failure
         try:
             tester.close()
-            logging.info("🧹 Browser driver closed successfully.")
-        except Exception as close_err:
-            logging.warning(f"⚠️ Error closing driver: {close_err}")
+            logger.info("🧹 Closed browser session.")
+        except Exception as e:
+            logger.warning(f"Error closing tester: {e}")
 
-# ✅ Make app callable for Vercel or Gunicorn
-# Render/Vercel looks for a variable named `app`
 if __name__ == "__main__":
-    # For local testing / Render
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True)
