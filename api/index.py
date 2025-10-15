@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    return jsonify({"message": "✅ Flask app is running on Vercel!"})
+    return render_template('index.html')
 
 @app.route('/test_url', methods=['POST'])
 def run_test():
